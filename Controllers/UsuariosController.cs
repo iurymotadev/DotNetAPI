@@ -3,6 +3,10 @@ using DotNetAPI.Repositories;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using System;
+using Microsoft.IdentityModel.Tokens;
+using System.IdentityModel.Tokens.Jwt;
+using System.Security.Claims;
+
 namespace DotNetAPI.Controllers
 {
     [Produces("application/json")]
@@ -16,21 +20,14 @@ namespace DotNetAPI.Controllers
         {
             _usuarioRepository = usuarioRepository;
         }
-        // get -> /api/usuarios
+
         [HttpGet]
         public IActionResult Listar()
         {
             return Ok(_usuarioRepository.Listar());
         }
-        // post -> /api/usuarios
-        [HttpPost]
-        public IActionResult Cadastrar(Usuario usuario)
-        {
-            _usuarioRepository.Cadastrar(usuario);
-            return StatusCode(201);
-        }
-        // get -> /api/usuarios/{id}
-        [HttpGet("{id}")] // Faz a busca pelo ID.
+
+        [HttpGet("{id}")]
         public IActionResult BuscarPorId(int id)
         {
             Usuario usuario = _usuarioRepository.BuscaPorId(id);
@@ -40,15 +37,59 @@ namespace DotNetAPI.Controllers
             }
             return Ok(usuario);
         }
-        // put -> /api/usuarios/{id}
-        // Atualiza.
+
+        // [HttpPost]
+        // public IActionResult Cadastrar(Usuario usuario)
+        // {
+        //     _usuarioRepository.Cadastrar(usuario);
+        //     return StatusCode(201);
+        // }
+
+        public IActionResult Post(Usuario usuario)
+        {
+            Usuario usuarioBuscado = _usuarioRepository.Login(usuario.Email,
+            usuario.Senha);
+            if (usuarioBuscado == null)
+            {
+                return NotFound("E-mail ou senha inválidos!");
+            }
+
+            var claims = new[]
+            {
+
+            new Claim(JwtRegisteredClaimNames.Email, usuarioBuscado.Email),
+
+            new Claim(JwtRegisteredClaimNames.Jti,
+            usuarioBuscado.Id.ToString()),
+            };
+
+            var key = new
+            SymmetricSecurityKey(System.Text.Encoding.UTF8.GetBytes("dotnetapi-chaveautenticacao"));
+
+            var creds = new SigningCredentials(key, SecurityAlgorithms.HmacSha256);
+
+            var token = new JwtSecurityToken(
+            issuer: "DotNetAPI", // Emissor do token.
+            audience: "DotNetAPI", // Destinatário do token.
+            claims: claims, // Dados definidos acima.
+            expires: DateTime.Now.AddMinutes(30), // Tempo de expiração.
+            signingCredentials: creds // Credenciais do token.
+            );
+            // Retorna ok com o token.
+            return Ok(
+            new { token = new JwtSecurityTokenHandler().WriteToken(token) }
+            );
+        }
+
+        [Authorize]
         [HttpPut("{id}")]
         public IActionResult Atualizar(int id, Usuario usuario)
         {
             _usuarioRepository.Atualizar(id, usuario);
             return StatusCode(204);
         }
-        // delete -> /api/usuarios/{id}
+
+        [Authorize]
         [HttpDelete("{id}")]
         public IActionResult Deletar(int id)
         {
@@ -57,7 +98,7 @@ namespace DotNetAPI.Controllers
                 _usuarioRepository.Deletar(id);
                 return StatusCode(204);
             }
-            catch (Exception e)
+            catch (Exception)
             {
                 return BadRequest();
             }
